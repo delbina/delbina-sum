@@ -4,8 +4,9 @@
 
 Each record is the input a delbina summarizer receives (``lines``, the same
 "role: text" format as Compressor._summary_lines, optionally starting with
-"previous summary: ...") plus the facts a good summary must keep. No model is
-involved; summaries are added later by the teacher run.
+"previous summary: ...") plus the facts a good summary must keep, and a ``target``
+summary built straight from those facts (no model involved, so it is correct by
+construction: newest values only, every value under its own project).
 
 What makes it harder than bench/make_agent_session.py:
 - 13 fact kinds, 2-8 facts per chat, several projects per chat
@@ -169,12 +170,18 @@ UPDATES = [
 
 
 # --- filler -------------------------------------------------------------------------------
+# (question, answer, note for the target summary's Context section)
 CHAT = [
-    ("Why does the {p} test hang on CI?", "It waits on a socket that CI never opens; I added a timeout."),
-    ("Can you explain what the retry decorator in {p} does?", "It retries the call up to three times with backoff and re-raises the last error."),
-    ("Is the {p} cache safe to clear?", "Yes, it rebuilds on the next request; only the first call gets slower."),
-    ("Rename the helper in {p} to something clearer.", "Renamed it and updated the two call sites."),
-    ("What's left on the {p} refactor?", "Only the error messages; the logic is done."),
+    ("Why does the {p} test hang on CI?", "It waits on a socket that CI never opens; I added a timeout.",
+     "{p}: CI test hung on a socket CI never opens; timeout added."),
+    ("Can you explain what the retry decorator in {p} does?", "It retries the call up to three times with backoff and re-raises the last error.",
+     "{p}: retry decorator retries 3 times with backoff, then re-raises."),
+    ("Is the {p} cache safe to clear?", "Yes, it rebuilds on the next request; only the first call gets slower.",
+     "{p}: cache is safe to clear; it rebuilds on the next request."),
+    ("Rename the helper in {p} to something clearer.", "Renamed it and updated the two call sites.",
+     "{p}: helper renamed, both call sites updated."),
+    ("What's left on the {p} refactor?", "Only the error messages; the logic is done.",
+     "{p}: refactor done except the error messages."),
 ]
 ACKS = [("user", "ok thanks"), ("assistant", "Done."), ("user", "looks good, continue"), ("assistant", "On it.")]
 
@@ -200,16 +207,17 @@ def _tool_step(rng: random.Random, p: str, buried: str | None = None) -> list[st
     return lines
 
 
-def _filler(rng: random.Random, projects: list[str]) -> list[str]:
+def _filler(rng: random.Random, projects: list[str]) -> tuple[list[str], str | None]:
+    """Filler lines, plus a Context note when the filler carries information worth keeping."""
     p = rng.choice(projects)
     roll = rng.random()
     if roll < 0.55:
-        return [f"user: Look into the {p} module."] + _tool_step(rng, p)
+        return [f"user: Look into the {p} module."] + _tool_step(rng, p), None
     if roll < 0.85:
-        q, a = rng.choice(CHAT)
-        return [f"user: {q.format(p=p)}", f"assistant: {a}"]
+        q, a, note = rng.choice(CHAT)
+        return [f"user: {q.format(p=p)}", f"assistant: {a}"], note.format(p=p)
     role, text = rng.choice(ACKS)
-    return [f"{role}: {text}"]
+    return [f"{role}: {text}"], None
 
 
 # --- one sample ---------------------------------------------------------------------------
@@ -279,6 +287,7 @@ def make_sample(split: str, i: int) -> dict:
 
     lines = [f"previous summary: The work so far covered {', '.join(projects)}. Known facts: "
              + "; ".join(prev_parts) + "."] if prev_parts else []
+    notes: list[str] = []
     for s in range(steps + 1):
         for action, f in events.get(s, []):
             ctx = {**f["extra"], "v": f["stale"][0] if action == "say" and f["stale"] else f["value"]}
@@ -293,10 +302,13 @@ def make_sample(split: str, i: int) -> dict:
             if rng.random() < 0.5:
                 lines.append(rng.choice(["assistant: Noted.", "assistant: Got it.", "assistant: OK."]))
         if s < steps:
-            lines += _filler(rng, projects)
+            more, note = _filler(rng, projects)
+            lines += more
+            if note and note not in notes:
+                notes.append(note)
 
     out_facts = [{"kind": f["kind"], "subject": f["subject"], "value": f["value"], "stale": f["stale"],
-                  "where": f["where"]} for f in facts]
+                  "where": f["where"], "label": KINDS[f["kind"]]["label"].format(**f["extra"])} for f in facts]
     sample = {
         "id": f"{VERSION}-{split}-{i:06d}",
         "split": split,
@@ -308,8 +320,23 @@ def make_sample(split: str, i: int) -> dict:
         "generator": f"delbina datagen {VERSION}",
         "license": "Apache-2.0",
     }
+    sample["target"] = target_summary(lines, out_facts, notes)
     verify(sample)
     return sample
+
+
+MAX_NOTES = 3
+
+
+def target_summary(lines: list[str], facts: list[dict], notes: list[str]) -> str:
+    """The summary the student learns to write. Facts in order of first mention, newest value
+    only; then at most MAX_NOTES context notes (the latest ones)."""
+    text = "\n".join(lines)
+    order = sorted(facts, key=lambda f: min(text.find(v) for v in [f["value"], *f["stale"]]))
+    out = ["Facts:"] + [f"- {f['subject']}: {f['label']}: {f['value']}" for f in order]
+    if notes:
+        out += ["Context:"] + [f"- {n}" for n in notes[-MAX_NOTES:]]
+    return "\n".join(out)
 
 
 def verify(sample: dict) -> None:
@@ -320,6 +347,9 @@ def verify(sample: dict) -> None:
             assert v in text, f"{sample['id']}: {v!r} missing from lines"
     for line in sample["lines"]:
         assert redact_text(line) == line, f"{sample['id']}: redaction changed {line[:80]!r}"
+    from common import score  # local import: common pulls in delbina's prompt
+    r = score(sample["target"], sample["facts"])
+    assert r["ok"], f"{sample['id']}: target misses {r['missing']} or keeps stale {r['stale_hits']}"
 
 
 # --- CLI ----------------------------------------------------------------------------------

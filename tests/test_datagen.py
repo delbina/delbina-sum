@@ -52,3 +52,13 @@ def test_prompts():
     lines = ["user: hi"]
     assert student_prompt(lines).endswith("Summary:")
     assert "newest value" in teacher_prompt(lines) and teacher_prompt(lines).endswith("Summary:")
+
+
+def test_target_correct_by_construction():
+    for s in TRAIN + TEST:
+        assert score(s["target"], s["facts"])["ok"], s["id"]
+        fact_lines = [l for l in s["target"].splitlines() if l.startswith("- ") and l.count(": ") >= 2]
+        for f in s["facts"]:  # each value sits on a line naming its own project
+            assert f"- {f['subject']}: {f['label']}: {f['value']}" in fact_lines, s["id"]
+        ctx = s["target"].split("Context:\n")[1:] or [""]
+        assert ctx[0].count("\n- ") < md.MAX_NOTES, s["id"]
