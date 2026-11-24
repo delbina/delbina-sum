@@ -11,7 +11,7 @@ from collections import defaultdict
 
 import torch
 
-from common import clean_summary, score, student_prompt
+from common import clean_summary, fact_lines, invented, score, student_prompt
 
 
 def _prompt_text(tok, lines: list[str]) -> str:
@@ -74,26 +74,38 @@ def summarize(model, tok, rows: list[dict], batch_size: int = 8, max_new_tokens:
     return results  # type: ignore[return-value]
 
 
-def evaluate(rows: list[dict], outputs: list[dict]) -> dict:
-    """Aggregate fact-level metrics over a split (same definitions as the teacher notebook)."""
+def evaluate(rows: list[dict], outputs: list[dict], unseen_kinds=()) -> dict:
+    """Aggregate fact-level metrics over a split (same definitions as the teacher notebook).
+    ``invented_rate``: % of summary fact lines whose value is not in the input.
+    ``unseen_recall``: recall over kinds in ``unseen_kinds`` (held out from training)."""
     by_kind, by_where = defaultdict(list), defaultdict(list)
     hits, bound, stale, ok, trunc, chars = [], [], [], [], [], []
+    n_lines, n_inv, inv_chats, dis = 0, 0, 0, []
     for r, o in zip(rows, outputs):
-        sc = score(o["summary"], r["facts"])
+        sc = score(o["summary"], r["facts"], r.get("distractors", ()))
         missing, unbound = set(sc["missing"]), set(sc["unbound"])
         for f in r["facts"]:
             h = f["value"] not in missing
             hits.append(h); bound.append(h and f["value"] not in unbound)
             by_kind[f["kind"]].append(h); by_where[f["where"]].append(h)
         stale.append(bool(sc["stale_hits"])); ok.append(sc["ok"])
+        if r.get("distractors"):
+            dis.append(bool(sc["distractor_hits"]))
+        inv = invented(o["summary"], r["lines"])
+        n_lines += len(fact_lines(o["summary"])); n_inv += len(inv); inv_chats += bool(inv)
         trunc.append(o["truncated"]); chars.append(len(o["summary"]))
     pct = lambda xs: round(100 * sum(xs) / len(xs), 1) if xs else None
+    unseen = [h for k in unseen_kinds for h in by_kind.get(k, [])]
     chars.sort()
     return {
         "samples": len(rows),
         "fact_recall": pct(hits),
         "bound_recall": pct(bound),
+        "unseen_recall": pct(unseen),
         "stale_hit_rate": pct(stale),
+        "distractor_hit_rate": pct(dis),
+        "invented_rate": round(100 * n_inv / n_lines, 1) if n_lines else 0.0,
+        "invented_chats": inv_chats,
         "perfect_rate": pct(ok),
         "truncated": sum(trunc),
         "recall_by_kind": {k: pct(v) for k, v in sorted(by_kind.items())},

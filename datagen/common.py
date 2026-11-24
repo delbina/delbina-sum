@@ -50,15 +50,16 @@ def _bound(summary: str, subject: str, value: str) -> bool:
     return False
 
 
-def score(summary: str, facts: list[dict]) -> dict:
+def score(summary: str, facts: list[dict], distractors: list[str] = ()) -> dict:
     """Fact recall of a summary. A fact counts if its current value appears verbatim.
     ``unbound``: values present but never on a line naming their own project (wrong-project
     or project-less mentions). ``stale_hits``: superseded values that still appear.
-    ``ok`` needs all three clean."""
+    ``distractor_hits``: rejected proposals that appear (v1). ``ok`` needs all clean."""
     missing = [f["value"] for f in facts if not _has(summary, f["value"])]
     unbound = [f["value"] for f in facts
                if f["value"] not in missing and "subject" in f and not _bound(summary, f["subject"], f["value"])]
     stale = [s for f in facts for s in f.get("stale", ()) if _has(summary, s)]
+    dis = [d for d in distractors if _has(summary, d)]
     n = len(facts)
     return {
         "recall": (n - len(missing)) / n if n else 1.0,
@@ -66,5 +67,30 @@ def score(summary: str, facts: list[dict]) -> dict:
         "missing": missing,
         "unbound": unbound,
         "stale_hits": stale,
-        "ok": not missing and not unbound and not stale,
+        "distractor_hits": dis,
+        "ok": not missing and not unbound and not stale and not dis,
     }
+
+
+def fact_lines(summary: str) -> list[tuple[str, str, str]]:
+    """(subject, label, value) for every "- subject: label: value" line in the Facts part
+    (everything before a "Context:" line). Trailing punctuation and backticks are dropped."""
+    out = []
+    for line in summary.split("\nContext:")[0].splitlines():
+        line = line.strip()
+        if not line.startswith(("- ", "* ")):
+            continue
+        parts = line[2:].split(": ", 2)
+        if len(parts) == 3:
+            value = parts[2].strip().rstrip(".;,").strip("`").strip()
+            if value:
+                out.append((parts[0].strip(), parts[1].strip(), value))
+    return out
+
+
+def invented(summary: str, lines: list[str]) -> list[str]:
+    """Fact-line values that never occur in the input (case-insensitive substring), i.e.
+    made up rather than copied. A value with extra words glued on ("8080 (was 7070)")
+    also counts: the line no longer carries a clean copied value."""
+    text = "\n".join(lines).lower()
+    return [v for _, _, v in fact_lines(summary) if v.lower() not in text]
