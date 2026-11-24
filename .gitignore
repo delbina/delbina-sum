@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ipynb_checkpoints/
+
+# datasets, checkpoints and exports live on Hugging Face, not in git
+/data/
+/outputs/
+*.gguf
+*.safetensors
+*.bin
+
+# secrets
+.env
