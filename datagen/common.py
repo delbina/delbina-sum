@@ -39,15 +39,32 @@ def _has(text: str, value: str) -> bool:
     return re.search(rf"(?<![A-Za-z0-9]){re.escape(value)}(?![A-Za-z0-9])", text, re.IGNORECASE) is not None
 
 
+def _bound(summary: str, subject: str, value: str) -> bool:
+    """Value sits on a line that also names its project. The value itself is blanked first,
+    because hosts, paths and flags often contain a project name ("pavo-qa-09.internal")."""
+    for line in summary.splitlines():
+        if _has(line, value):
+            rest = re.sub(re.escape(value), " ", line, flags=re.IGNORECASE)
+            if _has(rest, subject):
+                return True
+    return False
+
+
 def score(summary: str, facts: list[dict]) -> dict:
     """Fact recall of a summary. A fact counts if its current value appears verbatim.
-    ``stale_hits`` counts superseded values that still appear (should be 0)."""
+    ``unbound``: values present but never on a line naming their own project (wrong-project
+    or project-less mentions). ``stale_hits``: superseded values that still appear.
+    ``ok`` needs all three clean."""
     missing = [f["value"] for f in facts if not _has(summary, f["value"])]
+    unbound = [f["value"] for f in facts
+               if f["value"] not in missing and "subject" in f and not _bound(summary, f["subject"], f["value"])]
     stale = [s for f in facts for s in f.get("stale", ()) if _has(summary, s)]
     n = len(facts)
     return {
         "recall": (n - len(missing)) / n if n else 1.0,
+        "bound_recall": (n - len(missing) - len(unbound)) / n if n else 1.0,
         "missing": missing,
+        "unbound": unbound,
         "stale_hits": stale,
-        "ok": not missing and not stale,
+        "ok": not missing and not unbound and not stale,
     }

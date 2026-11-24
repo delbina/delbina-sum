@@ -62,3 +62,16 @@ def test_target_correct_by_construction():
             assert f"- {f['subject']}: {f['label']}: {f['value']}" in fact_lines, s["id"]
         ctx = s["target"].split("Context:\n")[1:] or [""]
         assert ctx[0].count("\n- ") < md.MAX_NOTES, s["id"]
+
+
+def test_score_binding():
+    facts = [{"subject": "atlas", "value": "src/atlas/settings/config.toml", "stale": []},
+             {"subject": "pavo", "value": "pavo-qa-09.internal", "stale": []}]
+    good = "- atlas: config path: src/atlas/settings/config.toml\n- pavo: staging host: pavo-qa-09.internal"
+    assert score(good, facts)["ok"]
+    # wrong project: value contains "atlas" but the line names hydra
+    r = score("- hydra: config path: src/atlas/settings/config.toml\n- pavo: host: pavo-qa-09.internal", facts)
+    assert r["recall"] == 1 and r["bound_recall"] == 0.5 and r["unbound"] == ["src/atlas/settings/config.toml"]
+    # project-less mention
+    r = score("staging host pavo-qa-09.internal\natlas uses src/atlas/settings/config.toml", facts)
+    assert r["unbound"] == ["pavo-qa-09.internal"] and not r["ok"]
