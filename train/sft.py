@@ -11,7 +11,7 @@ from collections import defaultdict
 
 import torch
 
-from common import clean_summary, fact_lines, invented, score, student_prompt
+from common import clean_summary, fact_lines, invented, invented_strict, rate_ci, score, student_prompt
 
 
 def _prompt_text(tok, lines: list[str]) -> str:
@@ -76,11 +76,13 @@ def summarize(model, tok, rows: list[dict], batch_size: int = 8, max_new_tokens:
 
 def evaluate(rows: list[dict], outputs: list[dict], unseen_kinds=()) -> dict:
     """Aggregate fact-level metrics over a split (same definitions as the teacher notebook).
-    ``invented_rate``: % of summary fact lines whose value is not in the input.
+    ``invented_rate``: % of summary fact lines whose value is not in the input (substring).
+    ``invented_strict_rate``: same with a whole-token match; ``*_ci``: 95% bootstrap over chats.
     ``unseen_recall``: recall over kinds in ``unseen_kinds`` (held out from training)."""
     by_kind, by_where, by_how = defaultdict(list), defaultdict(list), defaultdict(list)
     hits, bound, stale, ok, trunc, chars = [], [], [], [], [], []
     n_lines, n_inv, inv_chats, dis = 0, 0, 0, []
+    per_chat, per_chat_strict = [], []  # (invented, fact lines) per chat
     for r, o in zip(rows, outputs):
         sc = score(o["summary"], r["facts"], r.get("distractors", ()))
         missing, unbound = set(sc["missing"]), set(sc["unbound"])
@@ -94,7 +96,10 @@ def evaluate(rows: list[dict], outputs: list[dict], unseen_kinds=()) -> dict:
         if r.get("distractors"):
             dis.append(bool(sc["distractor_hits"]))
         inv = invented(o["summary"], r["lines"])
-        n_lines += len(fact_lines(o["summary"])); n_inv += len(inv); inv_chats += bool(inv)
+        n_fl = len(fact_lines(o["summary"]))
+        n_lines += n_fl; n_inv += len(inv); inv_chats += bool(inv)
+        per_chat.append((len(inv), n_fl))
+        per_chat_strict.append((len(invented_strict(o["summary"], r["lines"])), n_fl))
         trunc.append(o["truncated"]); chars.append(len(o["summary"]))
     pct = lambda xs: round(100 * sum(xs) / len(xs), 1) if xs else None
     unseen = [h for k in unseen_kinds for h in by_kind.get(k, [])]
@@ -108,6 +113,11 @@ def evaluate(rows: list[dict], outputs: list[dict], unseen_kinds=()) -> dict:
         "distractor_hit_rate": pct(dis),
         "invented_rate": round(100 * n_inv / n_lines, 1) if n_lines else 0.0,
         "invented_chats": inv_chats,
+        # report-only (bars use invented_rate): whole-token match, and 95% CIs over chats
+        "invented_rate_ci": list(rate_ci(per_chat)) if n_lines else None,
+        "invented_strict_rate": round(100 * sum(x for x, _ in per_chat_strict) / n_lines, 1) if n_lines else 0.0,
+        "invented_strict_ci": list(rate_ci(per_chat_strict)) if n_lines else None,
+        "fact_lines": n_lines,
         "perfect_rate": pct(ok),
         "truncated": sum(trunc),
         "recall_by_kind": {k: pct(v) for k, v in sorted(by_kind.items())},

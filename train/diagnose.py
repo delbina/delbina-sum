@@ -25,7 +25,7 @@ sys.path[:0] = [str(ROOT / "datagen"), str(ROOT / "train")]
 
 import make_dataset as md0  # noqa: E402
 import make_dataset_v2 as md  # noqa: E402
-from common import _bound, _has, invented  # noqa: E402
+from common import _bound, _has, fact_lines, invented, invented_strict, rate_ci  # noqa: E402
 
 REPO = "delbina/delbina-sum"
 
@@ -104,11 +104,25 @@ def v2_report(recs: list[dict]) -> None:
 def v0_report(recs: list[dict], show_all: bool = False) -> None:
     rows = [md0.make_sample("test", int(r["id"].rsplit("-", 1)[1])) for r in recs]
     assert all(r["id"] == s["id"] for r, s in zip(recs, rows)), "ids don't match the v0 test split"
-    glued, made_up = [], []
+    glued, made_up, token_only = [], [], []
+    per, per_strict = [], []
     for r, s in zip(recs, rows):
-        for v in invented(r["tuned"], s["lines"]):
+        inv = invented(r["tuned"], s["lines"])
+        strict = invented_strict(r["tuned"], s["lines"])
+        n = len(fact_lines(r["tuned"]))
+        per.append((len(inv), n)); per_strict.append((len(strict), n))
+        token_only += [f"{s['id']}: {v!r}" for v in strict if v not in inv]
+        for v in inv:
             real = [f["value"] for f in s["facts"] if f["value"].lower() in v.lower()]
             (glued if real else made_up).append(f"{s['id']}: {v!r}" + (f"  (real: {real[0]!r})" if real else ""))
+    n_lines = sum(n for _, n in per)
+    rate = lambda p: round(100 * sum(x for x, _ in p) / n_lines, 1) if n_lines else 0.0
+    print(f"\n== v0 test: {n_lines} fact lines ==")
+    print(f"  invented (substring, the bar): {rate(per)}%  95% CI {list(rate_ci(per))}")
+    print(f"  invented (whole token, report): {rate(per_strict)}%  95% CI {list(rate_ci(per_strict))}")
+    print(f"  only caught by whole-token match (inside a longer word or number): {len(token_only)}")
+    for e in (token_only if show_all else token_only[:8]):
+        print("   ", e)
     print(f"\n== v0 test: invented values: {len(glued) + len(made_up)} ==")
     print(f"  glued onto a real value (format problem): {len(glued)}")
     for e in (glued if show_all else glued[:5]):

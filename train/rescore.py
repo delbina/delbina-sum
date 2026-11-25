@@ -4,6 +4,7 @@
 
     python train/rescore.py path/to/eval_test.jsonl            # v0 outputs
     python train/rescore.py path/to/eval_test.jsonl --data v1
+    python train/rescore.py path/to/eval_test.jsonl --data v2       # v2, v3 and v4 share v2's test split
 """
 from __future__ import annotations
 
@@ -30,6 +31,8 @@ def main() -> None:
     rows = [md.make_sample("test", int(r["id"].rsplit("-", 1)[1])) for r in recs]
     assert all(r["id"] == s["id"] for r, s in zip(recs, rows)), "ids don't match the regenerated split"
     for who in ("base", "tuned"):
+        if who not in recs[0]:  # eval_test_v0.jsonl has tuned only
+            continue
         res = sft.evaluate(rows, [{"summary": r[who], "truncated": False} for r in recs], md.TEST_KINDS)
         res.pop("recall_by_where")
         print(who, json.dumps(res, indent=1))

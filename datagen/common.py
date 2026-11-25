@@ -94,3 +94,26 @@ def invented(summary: str, lines: list[str]) -> list[str]:
     also counts: the line no longer carries a clean copied value."""
     text = "\n".join(lines).lower()
     return [v for _, _, v in fact_lines(summary) if v.lower() not in text]
+
+
+def invented_strict(summary: str, lines: list[str]) -> list[str]:
+    """Like ``invented`` but the value must occur as a whole token (``_has``), so "true" inside
+    "untrue", "master" inside "webmaster" or "1" inside "8081" no longer count as copied.
+    Always a superset of ``invented``. Report-only: the bars still use ``invented``."""
+    text = "\n".join(lines)
+    return [v for _, _, v in fact_lines(summary) if not _has(text, v)]
+
+
+def rate_ci(per_chat: list[tuple[int, int]], n_boot: int = 2000, seed: int = 0) -> tuple[float, float]:
+    """95% bootstrap CI, in %, for sum(bad) / sum(lines) over (bad, lines) per chat.
+    Resamples whole chats, because the lines of one chat are not independent."""
+    import random
+    rng, n, stats = random.Random(seed), len(per_chat), []
+    for _ in range(n_boot):
+        b = l = 0
+        for _ in range(n):
+            x, y = per_chat[rng.randrange(n)]
+            b += x; l += y
+        stats.append(100 * b / l if l else 0.0)
+    stats.sort()
+    return round(stats[int(0.025 * n_boot)], 1), round(stats[int(0.975 * n_boot) - 1], 1)
