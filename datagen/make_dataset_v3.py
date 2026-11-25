@@ -798,7 +798,7 @@ RETRY = ("filler collides", "redaction changed", "target collides")  # resample;
 
 
 def make_sample(split: str, i: int) -> dict:
-    if split == "test":  # same 300 chats as v2, so v2 and v3 models compare directly
+    if split in ("test", "holdout"):  # same chats as v2, so v2 and v3 models compare directly
         return _v2.make_sample(split, i)
     for attempt in range(20):  # deterministic: same (split, i) always lands on the same attempt
         try:

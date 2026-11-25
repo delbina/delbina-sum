@@ -403,7 +403,7 @@ def _key(label: str) -> str:
 class Gen:
     def __init__(self, split: str, i: int, attempt: int):
         self.rng = random.Random(f"delbina-sum-{VERSION}-{split}-{i}-{attempt}")
-        self.test = split == "test"
+        self.test = split in ("test", "holdout")  # holdout: test distribution, other seeds
         self.taken: list[str] = []  # every value and distractor in this sample
 
     def pick(self, items: list):

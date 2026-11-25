@@ -224,7 +224,7 @@ def _filler(rng: random.Random, projects: list[str]) -> tuple[list[str], str | N
 
 def make_sample(split: str, i: int) -> dict:
     rng = random.Random(f"delbina-sum-{VERSION}-{split}-{i}")
-    test = split == "test"
+    test = split in ("test", "holdout")  # holdout: test distribution, other seeds
     pool = TEST_PROJECTS if test else TRAIN_PROJECTS
     kinds = list(KINDS) if test else [k for k in KINDS if k not in TEST_KINDS]
     projects = rng.sample(pool, rng.randint(2, 4))
