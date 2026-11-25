@@ -101,7 +101,7 @@ def v2_report(recs: list[dict]) -> None:
         print("   ", e)
 
 
-def v0_report(recs: list[dict]) -> None:
+def v0_report(recs: list[dict], show_all: bool = False) -> None:
     rows = [md0.make_sample("test", int(r["id"].rsplit("-", 1)[1])) for r in recs]
     assert all(r["id"] == s["id"] for r, s in zip(recs, rows)), "ids don't match the v0 test split"
     glued, made_up = [], []
@@ -111,10 +111,10 @@ def v0_report(recs: list[dict]) -> None:
             (glued if real else made_up).append(f"{s['id']}: {v!r}" + (f"  (real: {real[0]!r})" if real else ""))
     print(f"\n== v0 test: invented values: {len(glued) + len(made_up)} ==")
     print(f"  glued onto a real value (format problem): {len(glued)}")
-    for e in glued[:5]:
+    for e in (glued if show_all else glued[:5]):
         print("   ", e)
     print(f"  not in the input at all (made up / mangled): {len(made_up)}")
-    for e in made_up[:8]:
+    for e in (made_up if show_all else made_up[:8]):
         print("   ", e)
 
 
@@ -123,9 +123,10 @@ def main() -> None:
     ap.add_argument("--revision", default="v2")
     ap.add_argument("--v2", help="local eval_test.jsonl")
     ap.add_argument("--v0", help="local eval_test_v0.jsonl")
+    ap.add_argument("--all", action="store_true", help="list every v0 invented value")
     a = ap.parse_args()
     v2_report(load(a.v2, "eval_test.jsonl", a.revision))
-    v0_report(load(a.v0, "eval_test_v0.jsonl", a.revision))
+    v0_report(load(a.v0, "eval_test_v0.jsonl", a.revision), a.all)
 
 
 if __name__ == "__main__":
