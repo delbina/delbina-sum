@@ -23,9 +23,9 @@ import sft  # noqa: E402
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("path")
-    ap.add_argument("--data", default="v0", choices=["v0", "v1"])
+    ap.add_argument("--data", default="v0", choices=["v0", "v1", "v2"])
     a = ap.parse_args()
-    md = __import__("make_dataset" if a.data == "v0" else "make_dataset_v1")
+    md = __import__({"v0": "make_dataset", "v1": "make_dataset_v1", "v2": "make_dataset_v2"}[a.data])
     recs = [json.loads(l) for l in open(a.path, encoding="utf-8")]
     rows = [md.make_sample("test", int(r["id"].rsplit("-", 1)[1])) for r in recs]
     assert all(r["id"] == s["id"] for r, s in zip(recs, rows)), "ids don't match the regenerated split"

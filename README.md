@@ -6,7 +6,7 @@ Plan: LoRA fine-tune of Qwen2.5-0.5B-Instruct, distilled from Qwen2.5-7B/14B-Ins
 
 ## Layout
 
-- `datagen/`: synthetic dataset generators (v0 frozen, v1 current), prompts and fact scoring
+- `datagen/`: synthetic dataset generators (v0, v1 frozen; v2 current), prompts and fact scoring
 - `train/rescore.py`: re-score a saved `eval_test.jsonl` with the current metrics
 - `notebooks/`: teacher run, training and eval (Colab/Kaggle)
 - `tests/`
@@ -19,6 +19,7 @@ python -m venv .venv
 python -m pip install -r requirements.txt
 python datagen/make_dataset.py          # writes data/v0/{train,val,test}.jsonl (frozen)
 python datagen/make_dataset_v1.py       # writes data/v1: 43 fact kinds, open items, rejected values
+python datagen/make_dataset_v2.py       # writes data/v2: + new value shapes, styles, diff updates, more rejects
 python -m pytest -q -p no:cacheprovider
 ```
 

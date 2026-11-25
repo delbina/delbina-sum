@@ -78,7 +78,7 @@ def evaluate(rows: list[dict], outputs: list[dict], unseen_kinds=()) -> dict:
     """Aggregate fact-level metrics over a split (same definitions as the teacher notebook).
     ``invented_rate``: % of summary fact lines whose value is not in the input.
     ``unseen_recall``: recall over kinds in ``unseen_kinds`` (held out from training)."""
-    by_kind, by_where = defaultdict(list), defaultdict(list)
+    by_kind, by_where, by_how = defaultdict(list), defaultdict(list), defaultdict(list)
     hits, bound, stale, ok, trunc, chars = [], [], [], [], [], []
     n_lines, n_inv, inv_chats, dis = 0, 0, 0, []
     for r, o in zip(rows, outputs):
@@ -88,6 +88,8 @@ def evaluate(rows: list[dict], outputs: list[dict], unseen_kinds=()) -> dict:
             h = f["value"] not in missing
             hits.append(h); bound.append(h and f["value"] not in unbound)
             by_kind[f["kind"]].append(h); by_where[f["where"]].append(h)
+            if "how" in f:
+                by_how[f["how"]].append(h)
         stale.append(bool(sc["stale_hits"])); ok.append(sc["ok"])
         if r.get("distractors"):
             dis.append(bool(sc["distractor_hits"]))
@@ -110,5 +112,6 @@ def evaluate(rows: list[dict], outputs: list[dict], unseen_kinds=()) -> dict:
         "truncated": sum(trunc),
         "recall_by_kind": {k: pct(v) for k, v in sorted(by_kind.items())},
         "recall_by_where": {k: pct(v) for k, v in sorted(by_where.items())},
+        "recall_by_how": {k: pct(v) for k, v in sorted(by_how.items())},
         "summary_chars_p50": chars[len(chars) // 2] if chars else 0,
     }
