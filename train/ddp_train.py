@@ -21,12 +21,12 @@ sys.path[:0] = [str(ROOT / "datagen"), str(ROOT / "train")]
 
 BASE = "Qwen/Qwen2.5-0.5B-Instruct"
 EFFECTIVE_BATCH = 16
-GENERATORS = {"v1": "make_dataset_v1", "v2": "make_dataset_v2"}
+GENERATORS = {"v1": "make_dataset_v1", "v2": "make_dataset_v2", "v3": "make_dataset_v3"}
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--version", default="v2", choices=sorted(GENERATORS))
+    ap.add_argument("--version", default="v3", choices=sorted(GENERATORS))
     ap.add_argument("--out", required=True)
     ap.add_argument("--max-len", type=int, default=6144)
     ap.add_argument("--epochs", type=float, default=2)
