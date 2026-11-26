@@ -4,6 +4,7 @@
 
     torchrun --nproc_per_node 2 train/ddp_train.py --version v2 --out /kaggle/working/out   # Kaggle T4 x2
     python train/ddp_train.py --version v2 --out /content/out                              # one GPU
+    ... --base Qwen/Qwen2.5-1.5B-Instruct --base-dtype fp16                                # 1.5B on T4s
 
 Effective batch stays 16 whatever the GPU count: per-GPU batch 1 x grad_accum (16 / n_gpus).
 Each process rebuilds the (deterministic) dataset itself, so nothing is passed between them.
@@ -34,6 +35,9 @@ def main() -> None:
     ap.add_argument("--lora-r", type=int, default=16)
     ap.add_argument("--lora-alpha", type=int, default=32)
     ap.add_argument("--n-train", type=int, default=2000)
+    ap.add_argument("--base", default=BASE, help="base model, e.g. Qwen/Qwen2.5-1.5B-Instruct")
+    ap.add_argument("--base-dtype", default="fp32", choices=["fp32", "fp16"],
+                    help="fp16 halves the frozen weights' memory (for 1.5B on a T4); LoRA weights stay fp32")
     a = ap.parse_args()
 
     import torch
@@ -48,20 +52,25 @@ def main() -> None:
     torch.cuda.set_device(rank)
     main_proc = rank == 0
 
-    tok = AutoTokenizer.from_pretrained(BASE)
+    tok = AutoTokenizer.from_pretrained(a.base)
     rows = [md.make_sample("train", i) for i in range(a.n_train)]
     train_ex, dropped = sft.build_examples(tok, rows, a.max_len)
     if main_proc:
         print(f"[ddp_train] {world} GPU(s), grad_accum {EFFECTIVE_BATCH // world}, "
               f"examples {len(train_ex)}, dropped {dropped}", flush=True)
 
-    model = AutoModelForCausalLM.from_pretrained(BASE, dtype=torch.float32, device_map={"": rank})
+    dtype = torch.float16 if a.base_dtype == "fp16" else torch.float32
+    model = AutoModelForCausalLM.from_pretrained(a.base, dtype=dtype, device_map={"": rank})
     model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
     model.enable_input_require_grads()
     model = get_peft_model(model, LoraConfig(
         r=a.lora_r, lora_alpha=a.lora_alpha, lora_dropout=0.05, task_type="CAUSAL_LM",
         target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]))
+    for prm in model.parameters():  # fp16 AMP needs fp32 trainable weights (no-op for an fp32 base)
+        if prm.requires_grad:
+            prm.data = prm.data.float()
     if main_proc:
+        print(f"[ddp_train] base {a.base} ({a.base_dtype})", flush=True)
         model.print_trainable_parameters()
 
     out = Path(a.out)

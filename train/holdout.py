@@ -9,6 +9,7 @@ held-out kinds and phrasings) with different seeds, and is used once per candida
 
     python train/holdout.py --revision v4             # merged model from delbina/delbina-sum@v4
     python train/holdout.py --revision v4 --base      # also score plain Qwen for the recall-gain bar
+    python train/holdout.py --revision v5-1.5b --base-model Qwen/Qwen2.5-1.5B-Instruct
 
 Rules, so it stays held out:
   - run it only on a model that already passes all 6 bars on the test splits
@@ -41,6 +42,8 @@ def main() -> None:
     ap.add_argument("--batch", type=int, default=8)
     ap.add_argument("--base", action="store_true", help="also run plain Qwen (needed for the recall-gain bar)")
     ap.add_argument("--out", default=str(ROOT / "outputs" / "holdout"))
+    ap.add_argument("--base-model", default=BASE, help="base the run was tuned from (tokenizer + --base)")
+    ap.add_argument("--model", help="local merged model dir instead of the HF branch (same --revision label)")
     a = ap.parse_args()
 
     import torch
@@ -58,7 +61,7 @@ def main() -> None:
     sets = {"v2": [md2.make_sample("holdout", i) for i in range(a.n)],
             "v0": [md0.make_sample("holdout", i) for i in range(a.n)]}
     unseen = md2.TEST_KINDS | md0.TEST_KINDS
-    tok = AutoTokenizer.from_pretrained(BASE)
+    tok = AutoTokenizer.from_pretrained(a.base_model)
 
     def run(model_id: str, revision: str | None, name: str) -> dict:
         model = AutoModelForCausalLM.from_pretrained(model_id, revision=revision, dtype=dtype, device_map=dev)
@@ -75,8 +78,8 @@ def main() -> None:
             torch.cuda.empty_cache()
         return {"res": res, "outs": outs}
 
-    tuned = run(REPO, a.revision, "tuned")
-    base = run(BASE, None, "base") if a.base else None
+    tuned = run(a.model, None, "tuned") if a.model else run(REPO, a.revision, "tuned")
+    base = run(a.base_model, None, "base") if a.base else None
 
     t2, t0 = tuned["res"]["v2"], tuned["res"]["v0"]
     checks = {f"invented <= {INVENTED_MAX}%": t2["invented_rate"] <= INVENTED_MAX,
