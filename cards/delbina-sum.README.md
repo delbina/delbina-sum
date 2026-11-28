@@ -88,6 +88,9 @@ model. Trained on 2× T4 (fp16 base, fp32 LoRA), effective batch 16, lr 2e-4 cos
   look-alike cluster names; a few facts come out without a project.
 - **Rare inventions:** on unfamiliar input it occasionally writes a default-looking value that is not in
   the chat (for example a placeholder database URL with `postgres:password@localhost`).
+- **Invented Context notes on very short chats:** on tiny inputs (a handful of messages) it sometimes adds
+  Context lines such as "X: not known yet" for things the chat never mentioned. Treat Context lines as
+  unverified and ignore them for very short inputs.
 - Recall is weaker on the older v0 style (about 87–93) than on v2 (about 97–98).
 - English only. Fixed output format. Recall is exact-match, so a paraphrased value counts as a miss.
 - Do not rely on it as the only copy of secrets or critical config: delbina keeps originals in mask mode.

@@ -39,3 +39,5 @@ are different, so use delbina ≥ 0.5.0, which sets both.
 
 See the [main model card](https://huggingface.co/delbina/delbina-sum) for training data, output
 format and limitations.
+
+Can invent "not known yet" Context notes on very short chats; see the main model card.
